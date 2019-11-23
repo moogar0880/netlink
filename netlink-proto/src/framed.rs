@@ -1,27 +1,28 @@
-use std::{error::Error as StdError, io, pin::Pin};
-use tokio_codec::{Decoder, Encoder};
+use std::{
+    error::Error as StdError,
+    io::{self, Cursor},
+    pin::Pin,
+    task::{Context, Poll},
+    collections::vec_deque::VecDeque,
+};
 
-use bytes::{BufMut, BytesMut};
-use futures::{task::Context, Poll, Sink, Stream};
+use futures::{Sink, Stream};
 use log::error;
 use netlink_sys::{Socket, SocketAddr};
 
-pub struct NetlinkFramed<C> {
+pub struct NetlinkFramed<T> {
     socket: Socket,
-    codec: C,
-    reader: BytesMut,
-    writer: BytesMut,
+    codec: NetlinkCodec<T>,
+    reader: Cursor<VecDeque<u8>>,
+    writer: Cursor<VecDeque<u8>>,
     in_addr: SocketAddr,
     out_addr: SocketAddr,
     flushed: bool,
 }
 
-impl<C> Stream for NetlinkFramed<C>
-where
-    C: Decoder + Unpin,
-    C::Error: StdError,
+impl<T> Stream for NetlinkFramed<T>
 {
-    type Item = (C::Item, SocketAddr);
+    type Item = (NetlinkMessage<T>, SocketAddr);
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let Self {
@@ -32,23 +33,23 @@ where
             ..
         } = Pin::get_mut(self);
 
+        // In theory we shouldn't need a loop because according to the man, `recv()` only reads a
+        // single datagram. Thus, simply calling `recv()` then decoding the datagram we read should
+        // be enough. However, we've experienced that with netlink sockets (at least with the
+        // NETLINK_ROUTE protocol) `recv()` sometimes receives multiple datagrams at once, hence this
+        // weird loop.
         loop {
-            match codec.decode(reader) {
-                Ok(Some(item)) => return Poll::Ready(Some((item, *in_addr))),
-                Ok(None) => {}
-                Err(e) => {
-                    error!("unrecoverable error in decoder: {:?}", e);
-                    return Poll::Ready(None);
-                }
+            match codec.decode(&mut reader.get_mut()[reader.position()..]) {
+                (n, Some(item)) => {
+                    reader.set_position(n);
+                    return Poll::Ready(Some((item, *in_addr))),
+                (_, None) => reader.set_position(0),
             }
 
-            reader.clear();
-            reader.reserve(INITIAL_READER_CAPACITY);
-
             *in_addr = unsafe {
-                match ready!(socket.poll_recv_from(cx, reader.bytes_mut())) {
+                match ready!(socket.poll_recv_from(cx, &mut reader.get_mut()[..])) {
                     Ok((n, addr)) => {
-                        reader.advance_mut(n);
+                        reader.set_position(n);
                         addr
                     }
                     Err(e) => {
@@ -61,8 +62,8 @@ where
     }
 }
 
-impl<C: Encoder + Unpin> Sink<(C::Item, SocketAddr)> for NetlinkFramed<C> {
-    type Error = C::Error;
+impl<T> Sink<(NetlinkMessage<T>, SocketAddr)> for NetlinkFramed<T> {
+    type Error = io:Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if !self.flushed {

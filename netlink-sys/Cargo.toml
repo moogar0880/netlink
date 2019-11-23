@@ -15,29 +15,34 @@ description = "netlink sockets, with optional integration with mio and tokio"
 libc = "0.2"
 log = "0.4"
 
-[dependencies.futures-preview]
+[dependencies.futures]
 optional = true
-version = "0.3.0-alpha.18"
+version = "0.3"
 
 [dependencies.mio]
 optional = true
 version = "0.6"
 
-[dependencies.tokio-net]
+[dependencies.tokio]
 optional = true
-version = "0.2.0-alpha"
+git = "https://github.com/tokio-rs/tokio.git"
 default-features = false
-# We only depend on tokio-net for PollEvented, which bridges mio and
-# futures, so there's no need for the tcp/udp/uds/process features
-features = []
+# We only depend on tokio for PollEvented
+features = ["io-driver"]
 
 [features]
 default = []
 mio_socket = ["mio"]
-tokio_socket = ["mio_socket", "tokio-net", "futures-preview"]
+tokio_socket = ["mio_socket", "tokio", "futures"]
+
+[dev-dependencies.tokio]
+git = "https://github.com/tokio-rs/tokio.git"
+default-features = false
+# We only depend on tokio for PollEvented
+features = ["io-driver", "macros"]
+
 
 [dev-dependencies]
-tokio = "0.2.0-alpha"
 netlink-packet-audit = { path = "../netlink-packet-audit" }
 
 [[example]]

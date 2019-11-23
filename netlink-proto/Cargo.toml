@@ -12,12 +12,21 @@ repository = "https://github.com/little-dude/netlink"
 description = "async netlink protocol"
 
 [dependencies]
-bytes = "0.4.12"
+bytes = { git = "https://github.com/tokio-rs/bytes" }
 log = "0.4.8"
-futures-preview = "0.3.0-alpha.18"
-tokio-codec = "0.2.0-alpha"
+futures = "0.3"
 failure = "0.1.5"
 netlink-packet-core = { path = "../netlink-packet-core", version = "0.1" }
+
+[dependencies.tokio]
+git = "https://github.com/tokio-rs/tokio.git"
+default-features = false
+features = ["io-util"]
+
+[dependencies.tokio-util]
+git = "https://github.com/tokio-rs/tokio.git"
+default-features = false
+features = ["codec"]
 
 [dependencies.netlink-sys]
 default-features = false
@@ -29,15 +38,14 @@ version = "0.2"
 default = []
 workaround-audit-bug = []
 
-[dev-dependencies]
-env_logger = "0.6.2"
-tokio = "0.2.0-alpha"
-netlink-packet-route = { path = "../netlink-packet-route" }
-netlink-packet-audit = { path = "../netlink-packet-audit" }
+# [dev-dependencies]
+# env_logger = "0.6.2"
+# netlink-packet-route = { path = "../netlink-packet-route" }
+# netlink-packet-audit = { path = "../netlink-packet-audit" }
 
-[[example]]
-name = "dump_links"
+# [[example]]
+# name = "dump_links"
 
-[[example]]
-name = "audit_events"
-required-features = ["workaround-audit-bug"]
+# [[example]]
+# name = "audit_events"
+# required-features = ["workaround-audit-bug"]
