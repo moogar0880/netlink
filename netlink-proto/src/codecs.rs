@@ -47,33 +47,28 @@ where
                 return (0, None);
             }
 
+            // The audit messages are sometimes truncated. We found two such cases:
+            //
+            // 1. the length of the header is not included. In such case, the difference is exactly
+            //    16 bytes. Ref: https://github.com/mozilla/libaudit-go/issues/24
+            //
+            // 2. some rule message have some padding for alignment which is not taken into account
+            //    in the buffer length. In such cases the difference should be less than 4 bytes,
+            //    because netlink messages are 4 bytes aligned. Ref:
+            //    https://github.com/linux-audit/audit-userspace/issues/78
+            //
+            // Note that our check assumes that there is only one message in the buffer (if we have
+            // several, the difference will likely be greater 16 bytes). We shouldn't have multiple
+            // messages because `decode()` is called right after `recv()` which (according to the
+            // man) receives a single message. We've noticed that for the NETLINK_ROUTE protocol,
+            // `recv()` could actually receive multiple datagrams at once, but with NETLINK_AUDIT it
+            // seems `recv()` has the expected behavior.
+            //
+            // FIXME: maybe that gymnastic belongs to `netlink-packet-audit` instead.
             #[cfg(feature = "workaround-audit-bug")]
             {
-                // The audit messages are sometimes truncated:
-                //
-                // - the length of the header is not included (see also:
-                //   https://github.com/mozilla/libaudit-go/issues/24). In such case, the difference
-                //   is exactly 16 bytes.
-                //
-                // - some rule message have some padding for alignment (see
-                //   https://github.com/linux-audit/audit-userspace/issues/78) which is not taken
-                //   into account in the buffer length. In such cases the difference should be
-                //   less than 4 bytes, because netlink messages are 4 bytes aligned.
                 if let Ok(buf) = NetlinkBuffer::new_checked(&mut src[bytes_read..]) {
-                    // Note that this is not perfect: is there are multiple messages in `src`,
-                    // src.len() - buf.length() will be greater than 16, so if the message is
-                    // truncated we won't notice it.
-                    //
-                    // We *normally* shouldn't have multiple messages in `src`, because
-                    // `decode()` is always called right after `recv()`, which according to the
-                    // man receives a single message. However, we've noticed that for the
-                    // NETLINK_ROUTE protocol, `recv()` could actually receive multiple
-                    // datagrams at once.
-                    //
-                    // Here we're basically hoping/assuming that for NETLINK_AUDIT, `recv()`
-                    // does read a *single* datagram (which seems to be the case!).
-                    //
-                    // FIXME: maybe that gymnastic belongs to `netlink-packet-audit` instead.
+                    // NOTE: we assume that there's only one message in `src`
                     if (src.len() as isize - buf.length() as isize) <= 16 {
                         warn!("found what looks like a truncated audit packet");
                         warn!(
@@ -120,19 +115,21 @@ where
     }
 
     fn encode(&mut self, msg: NetlinkMessage<T>, buf: &mut [u8]) -> Result<usize, io::Error> {
-        let size = msg.buffer_len();
-        if buf.len() < size {
+        let message_len = msg.buffer_len();
+        let buffer_len = buf.len();
+
+        if buffer_len < message_len {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!(
                     "message is {} bytes, but only {} bytes left in the buffer",
-                    size,
-                    buf.len()
+                    message_len, buffer_len
                 ),
             ));
         }
-        msg.serialize(&mut buf[..size]);
+
+        msg.serialize(&mut buf[..message_len]);
         trace!(">>> {:?}", msg);
-        Ok(size)
+        Ok(message_len)
     }
 }

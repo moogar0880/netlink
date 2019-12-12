@@ -13,12 +13,48 @@ use netlink_sys::{Socket, SocketAddr};
 pub struct NetlinkFramed<T> {
     socket: Socket,
     codec: NetlinkCodec<T>,
-    reader: Cursor<VecDeque<u8>>,
-    writer: Cursor<VecDeque<u8>>,
+    reader: Buffer,
+    writer: Buffer,
     in_addr: SocketAddr,
     out_addr: SocketAddr,
     flushed: bool,
 }
+
+// FIXME: we should use bytes::BytesMut instead
+pub struct Buffer(Cursor<Vec<u8>>);
+
+impl Buffer {
+    fn get_ref(&self) -> &[u8] {
+        let pos = self.0.position();
+        &self.0.get_ref()[pos..]
+    }
+
+    fn get_mut(&mut self) -> &mut [u8] {
+        let pos = self.0.position();
+        &mut self.0.get_mut()[pos..]
+    }
+
+    fn position(&self) -> usize {
+        self.0.position()
+    }
+
+    fn set_position(&mut self, pos: usize) {
+        self.0.set_position(pos)
+    }
+
+    fn extend(&mut self, additional: usize) {
+        self.0.get_mut().resize(self.0.get_ref().len() + additional, 0)
+    }
+
+    fn len(&self) -> usize {
+        self.0.get_ref().len()
+    }
+
+    fn remaining(&self) -> usize {
+        self.len() - self.position()
+    }
+}
+
 
 impl<T> Stream for NetlinkFramed<T>
 {
@@ -39,15 +75,16 @@ impl<T> Stream for NetlinkFramed<T>
         // NETLINK_ROUTE protocol) `recv()` sometimes receives multiple datagrams at once, hence this
         // weird loop.
         loop {
-            match codec.decode(&mut reader.get_mut()[reader.position()..]) {
+            match codec.decode(reader.get_mut()) {
                 (n, Some(item)) => {
                     reader.set_position(n);
-                    return Poll::Ready(Some((item, *in_addr))),
+                    return Poll::Ready(Some((item, *in_addr)));
+                }
                 (_, None) => reader.set_position(0),
             }
 
             *in_addr = unsafe {
-                match ready!(socket.poll_recv_from(cx, &mut reader.get_mut()[..])) {
+                match ready!(socket.poll_recv_from(cx, reader.get_mut())) {
                     Ok((n, addr)) => {
                         reader.set_position(n);
                         addr
@@ -80,7 +117,13 @@ impl<T> Sink<(NetlinkMessage<T>, SocketAddr)> for NetlinkFramed<T> {
         trace!("sending frame");
         let (frame, out_addr) = item;
         let pin = self.get_mut();
-        pin.codec.encode(frame, &mut pin.writer)?;
+
+        if pin.writer.remaining() < framed.buffer_len() {
+            if pin.writer.
+            pin.writer.extend(
+
+        }
+        pin.codec.encode(frame, pin.writer.get_mut())?;
         pin.out_addr = out_addr;
         pin.flushed = false;
         trace!("frame encoded; length={}", pin.writer.len());
