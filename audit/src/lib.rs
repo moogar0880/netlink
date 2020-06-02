@@ -22,6 +22,18 @@ pub fn new_connection() -> io::Result<(
     Handle,
     UnboundedReceiver<(NetlinkMessage<AuditMessage>, SocketAddr)>,
 )> {
-    let (conn, handle, messages) = netlink_proto::new_connection(Protocol::Audit)?;
+    new_multicast_connection(0)
+}
+
+#[allow(clippy::type_complexity)]
+pub fn new_multicast_connection(
+    multicast_groups: u32,
+) -> io::Result<(
+    Connection<AuditMessage>,
+    Handle,
+    UnboundedReceiver<(NetlinkMessage<AuditMessage>, SocketAddr)>,
+)> {
+    let (conn, handle, messages) =
+        netlink_proto::new_multicast_connection(Protocol::Audit, multicast_groups)?;
     Ok((conn, Handle::new(handle), messages))
 }
