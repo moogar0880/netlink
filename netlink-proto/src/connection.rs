@@ -48,9 +48,22 @@ where
         unsolicited_messages_tx: UnboundedSender<(NetlinkMessage<T>, SocketAddr)>,
         protocol: NetlinkProtocol,
     ) -> io::Result<Self> {
+        Connection::new_multicast(requests_rx, unsollicited_messages_tx, protocol, 0)
+    }
+
+    pub(crate) fn new_multicast(
+        requests_rx: UnboundedReceiver<Request<T>>,
+        unsollicited_messages_tx: UnboundedSender<(NetlinkMessage<T>, SocketAddr)>,
+        protocol: NetlinkProtocol,
+        multicast_groups: u32,
+    ) -> io::Result<Self> {
         let socket = Socket::new(protocol)?;
         Ok(Connection {
-            socket: NetlinkFramed::new(socket, NetlinkCodec::<NetlinkMessage<T>>::new()),
+            socket: NetlinkFramed::new_multicast(
+                socket,
+                NetlinkCodec::<NetlinkMessage<T>>::new(),
+                multicast_groups,
+            ),
             protocol: Protocol::new(),
             requests_rx: Some(requests_rx),
             unsolicited_messages_tx: Some(unsolicited_messages_tx),
