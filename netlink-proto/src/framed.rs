@@ -146,11 +146,19 @@ impl<C> NetlinkFramed<C> {
     ///
     /// See struct level documentation for more details.
     pub fn new(socket: Socket, codec: C) -> NetlinkFramed<C> {
+        NetlinkFramed::new_multicast(socket, codec, 0)
+    }
+
+    /// Create a new `NetlinkFramed` backed by the given socket and codec, with
+    /// the specified multicast_groups set in the underlying `SockAddr`.
+    ///
+    /// See struct level documentation for more details.
+    pub fn new_multicast(socket: Socket, codec: C, multicast_groups: u32) -> NetlinkFramed<C> {
         NetlinkFramed {
             socket,
             codec,
-            out_addr: SocketAddr::new(0, 0),
-            in_addr: SocketAddr::new(0, 0),
+            out_addr: SocketAddr::new(0, multicast_groups),
+            in_addr: SocketAddr::new(0, multicast_groups),
             reader: BytesMut::with_capacity(INITIAL_READER_CAPACITY),
             writer: BytesMut::with_capacity(INITIAL_WRITER_CAPACITY),
             flushed: true,
