@@ -219,10 +219,35 @@ where
         + packet::NetlinkDeserializable<T>
         + Unpin,
 {
+    new_multicast_connection(protocol, 0)
+}
+
+/// Create a new Netlink connection, with a specific multicast group to join,
+/// for the given Netlink protocol, and returns a handle to that connection.
+///
+/// For more information, see [new_connection](fn.new_connection.html).
+#[allow(clippy::type_complexity)]
+pub fn new_multicast_connection<T>(
+    protocol: netlink_sys::Protocol,
+    multicast_groups: u32,
+) -> io::Result<(
+    Connection<T>,
+    ConnectionHandle<T>,
+    UnboundedReceiver<(packet::NetlinkMessage<T>, sys::SocketAddr)>,
+)>
+where
+    T: Debug
+        + PartialEq
+        + Eq
+        + Clone
+        + packet::NetlinkSerializable<T>
+        + packet::NetlinkDeserializable<T>
+        + Unpin,
+{
     let (requests_tx, requests_rx) = unbounded::<Request<T>>();
     let (messages_tx, messages_rx) = unbounded::<(packet::NetlinkMessage<T>, sys::SocketAddr)>();
     Ok((
-        Connection::new(requests_rx, messages_tx, protocol)?,
+        Connection::new_multicast(requests_rx, messages_tx, protocol, multicast_groups)?,
         ConnectionHandle::new(requests_tx),
         messages_rx,
     ))
